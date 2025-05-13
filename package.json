@@ -4,7 +4,8 @@
   "description": "Label printer web application",
   "main": "printer.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node printer.js"
   },
   "keywords": [],
   "author": "",
