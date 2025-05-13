@@ -3,8 +3,8 @@ const express = require('express');
 const net     = require('net');
 
 const app       = express();
-const PRINTER_IP   = '192.168.1.100';  // ← put your printer’s IP here
-const PRINTER_PORT = 9100;
+const PRINTER_IP   = process.env.PRINTER_IP || '192.168.1.100';  // Use environment variable
+const PRINTER_PORT = process.env.PRINTER_PORT || 9100;
 
 app.use(express.json());
 
@@ -103,8 +103,6 @@ PRINT 1
   });
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`🎯 Server listening at http://localhost:${PORT}`);  // ← here
-});
+// Export the Express API
+module.exports = app;
 
