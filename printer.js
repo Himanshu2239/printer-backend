@@ -22,6 +22,12 @@ if (!fs.existsSync(TEMP_DIR)) {
 
 app.use(express.json());
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: err.message });
+});
+
 // Serve HTML UI
 app.get('/', (req, res) => {
   res.send(`
@@ -63,6 +69,11 @@ app.get('/', (req, res) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ serial })
             });
+            
+            if (!res.ok) {
+              throw new Error('HTTP error! status: ' + res.status);
+            }
+            
             const json = await res.json();
             if (json.success) {
               status.textContent = '✅ Printed successfully!';
@@ -70,7 +81,8 @@ app.get('/', (req, res) => {
               status.textContent = '❌ Printer error: ' + json.error;
             }
           } catch (err) {
-            status.textContent = '❌ Network error: ' + err.message;
+            console.error('Print error:', err);
+            status.textContent = '❌ Error: ' + err.message;
           }
         });
       </script>
@@ -80,35 +92,53 @@ app.get('/', (req, res) => {
 });
 
 // Print route using COPY command to USB printer
-app.post('/print', (req, res) => {
-  const { serial } = req.body;
-  if (!serial) {
-    return res.status(400).json({ error: 'serial is required' });
-  }
+app.post('/print', async (req, res) => {
+  try {
+    const { serial } = req.body;
+    if (!serial) {
+      return res.status(400).json({ error: 'serial is required' });
+    }
 
-  const tspl = `
+    // TSPL2 commands
+    const tspl2 = `
 SIZE 60 mm,40 mm
 GAP 2 mm,0
+DIRECTION 0
 CLS
-BARCODE 20,20,"128",50,1,0,2,2,"${serial}"
-TEXT 20,80,"3",0,1,1,"${serial}"
+CODEPAGE UTF-8
+TEXT 20,20,"3",0,1,1,"${serial}"
+BARCODE 20,50,"128",50,1,0,2,2,"${serial}"
 PRINT 1
 `.trim();
 
-  // Create TSPL file
-  const filename = `label_${Date.now()}.prn`;
-  const filePath = path.join(TEMP_DIR, filename);
-  fs.writeFileSync(filePath, tspl, 'ascii');
+    // Create TSPL2 file
+    const filename = `label_${Date.now()}.prn`;
+    const filePath = path.join(TEMP_DIR, filename);
 
-  // Use COPY to send it to printer
-  const copyCmd = `COPY /B "${filePath}" \\\\localhost\\${PRINTER_SHARE}`;
-  exec(copyCmd, (err, stdout, stderr) => {
-    if (err) {
-      console.error('Print error:', stderr || err.message);
-      return res.status(500).json({ error: stderr || err.message });
-    }
-    return res.json({ success: true });
-  });
+    // Write file
+    fs.writeFileSync(filePath, tspl2, 'ascii');
+
+    // Use COPY to send it to printer
+    const copyCmd = `COPY /B "${filePath}" \\\\localhost\\${PRINTER_SHARE}`;
+    
+    exec(copyCmd, (err, stdout, stderr) => {
+      // Clean up the temp file
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupErr) {
+        console.error('Error cleaning up temp file:', cleanupErr);
+      }
+
+      if (err) {
+        console.error('Print error:', stderr || err.message);
+        return res.status(500).json({ error: stderr || err.message });
+      }
+      return res.json({ success: true });
+    });
+  } catch (err) {
+    console.error('Server error:', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // Start server
