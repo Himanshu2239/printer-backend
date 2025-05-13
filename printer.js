@@ -3,7 +3,7 @@ const express = require('express');
 const net     = require('net');
 
 const app       = express();
-const PRINTER_IP   = process.env.PRINTER_IP || '192.168.1.100';  // Use environment variable
+const PRINTER_IP   = process.env.PRINTER_IP || '173.16.52.156';  // Use environment variable
 const PRINTER_PORT = process.env.PRINTER_PORT || 9100;
 
 app.use(express.json());
