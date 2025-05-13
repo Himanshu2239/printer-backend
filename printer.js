@@ -1,15 +1,28 @@
-// server.js
 const express = require('express');
-const net     = require('net');
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
 
+const app = express();
+const PORT = 3001; // You can change the port
 
-const app       = express();
-const PRINTER_IP   = process.env.PRINTER_IP || '173.16.52.156';  // Use environment variable
-const PRINTER_PORT = process.env.PRINTER_PORT || 9600;
+// Update with your printer share name
+const PRINTER_SHARE = process.env.PRINTER_SHARE || 'TSC TTP-644MT';
+const TEMP_DIR = 'C:\\print_temp'; // Make sure this folder exists
+
+// Create temp directory if it doesn't exist
+if (!fs.existsSync(TEMP_DIR)) {
+  try {
+    fs.mkdirSync(TEMP_DIR, { recursive: true });
+    console.log(`Created temp directory at ${TEMP_DIR}`);
+  } catch (err) {
+    console.error(`Error creating temp directory: ${err.message}`);
+  }
+}
 
 app.use(express.json());
 
-// Serve the HTML + client-side JS
+// Serve HTML UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -24,7 +37,7 @@ app.get('/', (req, res) => {
       </style>
     </head>
     <body>
-      <h1>Print Barcode Label</h1>
+      <h1>Print Barcode Label (USB)</h1>
       <label>
         Serial:
         <input id="serial" type="text" value="SN-0012345678" />
@@ -33,8 +46,8 @@ app.get('/', (req, res) => {
       <div id="status"></div>
 
       <script>
-        const btn    = document.getElementById('printBtn');
-        const input  = document.getElementById('serial');
+        const btn = document.getElementById('printBtn');
+        const input = document.getElementById('serial');
         const status = document.getElementById('status');
 
         btn.addEventListener('click', async () => {
@@ -66,14 +79,13 @@ app.get('/', (req, res) => {
   `);
 });
 
-// API to send TSPL to the printer
+// Print route using COPY command to USB printer
 app.post('/print', (req, res) => {
   const { serial } = req.body;
   if (!serial) {
     return res.status(400).json({ error: 'serial is required' });
   }
 
-  // Build your TSPL commands
   const tspl = `
 SIZE 60 mm,40 mm
 GAP 2 mm,0
@@ -83,27 +95,23 @@ TEXT 20,80,"3",0,1,1,"${serial}"
 PRINT 1
 `.trim();
 
-  const client = new net.Socket();
-  let responded = false;
+  // Create TSPL file
+  const filename = `label_${Date.now()}.prn`;
+  const filePath = path.join(TEMP_DIR, filename);
+  fs.writeFileSync(filePath, tspl, 'ascii');
 
-  client.on('error', err => {
-    if (!responded) {
-      responded = true;
-      res.status(500).json({ error: err.message });
+  // Use COPY to send it to printer
+  const copyCmd = `COPY /B "${filePath}" \\\\localhost\\${PRINTER_SHARE}`;
+  exec(copyCmd, (err, stdout, stderr) => {
+    if (err) {
+      console.error('Print error:', stderr || err.message);
+      return res.status(500).json({ error: stderr || err.message });
     }
-  });
-
-  client.connect(PRINTER_PORT, PRINTER_IP, () => {
-    client.write(tspl, 'ascii', () => {
-      client.end();
-      if (!responded) {
-        responded = true;
-        res.json({ success: true });
-      }
-    });
+    return res.json({ success: true });
   });
 });
 
-// Export the Express API
-module.exports = app;
-
+// Start server
+app.listen(PORT, () => {
+  console.log(`USB printer backend running at http://localhost:${PORT}`);
+});
